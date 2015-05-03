@@ -20,6 +20,7 @@ Sprite::Sprite(void)
     v_speed = h_speed = 0;
     frame_rate = 0;
     current_frame = 0;
+    // Default vector constructor ensures board is an empty 2-D vector
 }
 
 
@@ -28,62 +29,64 @@ Sprite::Sprite(void)
  *            stream, and initializes the sprite accordingly.
  *  Returns:  True if successful, false if not.  Reading could be unsuccessful
  *            if information is missing, incomplete, or invalid.
- *  Notes:  - An entry is expected to begin with the string SPRITE, followed
- *            by height, width, row, col, v-speed, h-speed, num-frames, and
- *            frames-per-cycle.  Then each of the frames (which is an image),
+ *  Notes:  - An entry is expected to begin with a line containing the height,
+ *            width, initial row, initial column, vertical speed,
+ *            horizontal speed, number of frames, and frames per animation
+ *            cycle.  Then each of the frames (which is an image),
  *            one at a time.
  *          - Lines in the image that are too short will be padded with empty
  *            characters, while lines that are too long will be truncated.
  *          - However, each frame should have exactly the expected number of
  *            lines, or unexpected display errors could occur.
+ *          - Each frame should immediately follow the previous one, with no
+ *            padding or extra lines between them.
  *          - If this function returns false, the Sprite's data will be
  *            unchanged
- *  TO DO:
- *  - Create a read_in() function for the Image class, to do some of this
- *    work itself
- *  - Overload the >> operator to use this function
- *  - Move the check for SPRITE out of this function
  */
 bool Sprite::read_in(istream &input)
 {
-    string first, line;
+    string line;
     unsigned h, w;
     double r, c, v_s, h_s;
     unsigned num_frames;
     double frames_per_cycle;
-    if (!(input >> first) || first != "SPRITE") {
-        return false;
-    }
-    if (!(input >> h >> w)) {
-        return false;
-    }
-    if (!(input >> r >> c) || r < 0 || c < 0) {
+    if (!(input >> h >> w >> r >> c) || r < 0 || c < 0) {
         return false;
     }
     if (!(input >> v_s >> h_s >> num_frames >> frames_per_cycle)) {
         return false;
     }
-    set_height(h);
+    getline(input, line);    // Ignore remainder of line; advance to the
+    set_height(h);           // next line in input
     set_width(w);
     row_pos = r;
     col_pos = c;
     v_speed = v_s;
     h_speed = h_s;
     frame_rate = (frames_per_cycle == 0) ? 0 : num_frames / frames_per_cycle;
-    getline(input, line);
     for (unsigned f = 0; f < num_frames; ++f) {
-        Image next_frame(height, width);
-        for (unsigned row = 0; row < height; ++row) {
-            unsigned line_width = width;
-            getline(input, line);
-            if (line.length() < line_width) line_width = line.length();
-            for (unsigned col = 0; col < line_width; ++col) {
-                next_frame.update_at(row, col, line[col]);
-            }
+        if (!(input.good())) {
+            frames.resize(frames.size() - f);  // Remove frames added thus far
+            return false;
         }
+        Image<char> next_frame(height, width);
+        next_frame.set_all(' ');
+        input >> next_frame;
         add_frame(next_frame);
     }
     return true;
+}
+
+
+/*  display()
+ *  Purpose:  Prints the Sprite to the given output stream, where the sprite's
+ *            image is determined by its current frame.  Note the Sprite's
+ *            position is not taken into account; for that, draw the sprite
+ *            into a larger image and print that.
+ */
+void Sprite::display(std::ostream &output) const
+{
+    output << frames[current_frame];
 }
 
 
@@ -91,7 +94,7 @@ bool Sprite::read_in(istream &input)
  *  Purpose:  Adds the given image to the Sprite's frame cycle.  The image
  *            is placed at the end of the cycle.
  */
-void Sprite::add_frame(Image new_frame)
+void Sprite::add_frame(Image<char> new_frame)
 {
     frames.push_back(new_frame);
 }
@@ -142,7 +145,7 @@ void Sprite::advance(unsigned canvas_height, unsigned canvas_width)
  *  Notes:  - Relies on the Image's update_at() function to handle
  *            out-of-bounds values when the Sprite is on the edge of the board.
  */
-void Sprite::draw_to(Image *board)
+void Sprite::draw_to(Image<char> *board) const
 {
     for (unsigned row = 0; row < height; ++row) {
         for (unsigned col = 0; col < width; ++col) {
@@ -196,7 +199,7 @@ void Sprite::set_width(unsigned w)
 /*  get_height()
  *  Purpose:  Returns the height of the Sprite's image frames.
  */
-unsigned Sprite::get_height(void)
+unsigned Sprite::get_height(void) const
 {
     return height;
 }
@@ -205,7 +208,7 @@ unsigned Sprite::get_height(void)
 /*  get_width()
  *  Purpose:  Returns the width of the Sprite's image frames.
  */
-unsigned Sprite::get_width(void)
+unsigned Sprite::get_width(void) const
 {
     return width;
 }
@@ -215,7 +218,7 @@ unsigned Sprite::get_width(void)
  *  Purely for debugging; prints the sprite's information to cout in a
  *    nicely formatted way that is easy to follow.
  */
-void Sprite::print()
+void Sprite::print() const
 {
     cout << "Size: " << height << " x " << width << endl;
     cout << "Position: (" << row_pos << ", " << col_pos << ")" << endl;
@@ -224,12 +227,7 @@ void Sprite::print()
          << current_frame << endl;
     for (unsigned f = 0; f < frames.size(); ++f) {
         cout << "============= FRAME " << f << " ===============" << endl;
-        for (unsigned row = 0; row < height; ++row) {
-            for (unsigned col = 0; col < width; ++col) {
-                cout << frames[f].at(row, col);
-            }
-            cout << endl;
-        }
+        cout << frames[f];
     }
     cout << "======================================" << endl;
 }

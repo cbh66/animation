@@ -1,7 +1,9 @@
 /*---------------------------------------------------------------------------*\
  *  animation.cpp                                                            *
- *  Version:  0.0.1                                                          *
+ *  Version:  0.0.2                                                          *
  *  Written by: Colin Hamilton, Tufts University                             *
+ *                                                                           *
+ *  Inspired by the Tufts COMP11 second project, in use 2013-2015.           *
  *                                                                           *
  *  A program for running simple ASCII animations in terminal.               *
  *  Provide, on the command line, the names of files with appropriate        *
@@ -26,12 +28,12 @@
  *      each frame of the sprite's animation should look like.               *
  *                                                                           *
  *  TO DO:                                                                   *
- *  - Allow for additional control sequences in a file, eg. instead of just  *
- *    CANVAS and SPRITE, allow OPTION followed by some sequence              *
- *  - Such options should include single-step or not, FPS, bounce or wrap.   *
+ *  - Options should include bounce or wrap.                                 *
+ *  - Option to stop animation after a certain number of frames (or seconds) *
  *  - Allow command-line options, which would override options in the file   *
- *  - Process user commands as things are running.  Perhaps allow users to   *
- *    select certain sprites and, eg, change their speed or position.        *
+ *  - Process user commands while things are running.  Perhaps allow users   *
+ *    to select certain sprites and, eg, change their speed or position.     *
+ *  - Attach a layer to each frame, then sort them by layer before drawing.  *
 \*---------------------------------------------------------------------------*/
 #include <iostream>
 #include <string>
@@ -47,17 +49,20 @@ using namespace std;
 
 static bool SINGLE_STEP = false;
 static const char QUIT = 'q';
-static unsigned FPS = 10;
-static unsigned USECS_PER_SEC = 1000000;
+static unsigned FPS = 30;
+static const unsigned USECS_PER_SEC = 1000000;
 
 
-vector<Sprite> read_in(int size, char *files[], Image *canvas);
-void run_animation(Image *canvas, vector<Sprite> sprites);
+string toupper(string s);
+vector<Sprite> read_in(int size, char *files[], Image<char> *canvas);
+void process_file(istream &input, vector<Sprite> *sprites,
+                  Image<char> *canvas);
+void run_animation(Image<char> *canvas, vector<Sprite> sprites);
 
 
 int main(int argc, char *argv[])
 {
-    Image canvas;
+    Image<char> canvas;
     if (argc < 2) {
         cerr << "Please provide at least one filename." << endl;
         return 1;
@@ -75,16 +80,11 @@ int main(int argc, char *argv[])
  *  Parameters: The number of files to read, and an array of their names.
  *            A pointer to the canvas, whose size may be modified.
  *  Returns:  A vector of the sprites read in.
- *  Notes:    Prints to cerr when a given file cannot be opened, but does not
+ *  Notes:  - Prints to cerr when a given file cannot be opened, but does not
  *            abort.
- *            Exits the program when the first file does not begin with valid
- *            canvas information.  This may be changed to make things more
- *            flexible.
  */
-vector<Sprite> read_in(int size, char *files[], Image *canvas)
+vector<Sprite> read_in(int size, char *files[], Image<char> *canvas)
 {
-    unsigned height, width;
-    string first;
     vector<Sprite> sprites;
     for (int i = 0; i < size; ++i) {
         ifstream input;
@@ -93,24 +93,60 @@ vector<Sprite> read_in(int size, char *files[], Image *canvas)
             cerr << "Could not open file \"" << files[i] << "\"" << endl;
             continue;
         }
-        if (i == 0) {
-            if (!(input >> first) || first != "CANVAS" ||
-                !(input >> height >> width)) {
-                cerr << "First file, \"" << files[i] << "\", should begin "
-                     << "with canvas information." << endl;
-                exit(1);
-            }
-            canvas->set_height(height);
-            canvas->set_width(width);
-        }
-        Sprite current;
-        while (current.read_in(input)) {
-            sprites.push_back(current);
-            current = Sprite();
-        }
+        process_file(input, &sprites, canvas);
         input.close();
     }
     return sprites;
+}
+
+
+/*  toupper()
+ *  Purpose:  Converts a string to all uppercase.
+ *  Parameters:  The string to make uppercase
+ *  Returns:  The uppercase'd string
+ */
+string toupper(string s)
+{
+    unsigned size = s.length();
+    for (unsigned i = 0; i < size; ++i) {
+        s[i] = toupper(s[i]);
+    }
+    return s;
+}
+
+
+/*  process_file()
+ *  Purpose:  Reads data from a given stream and updates data according to
+ *            the instructions therein.
+ *  Parameters:  A reference to the stream to read from.  Pointers to the
+ *            vector of sprites and the canvas, both of which may be modified.
+ *  Notes:  - Handles program settings by currently setting global variables.
+ *            May change that to take in some sort of Settings object.
+ */
+void process_file(istream &input, vector<Sprite> *sprites, Image<char> *canvas)
+{
+    string first;
+    while (input >> first) {
+        first = toupper(first);
+        if (first == "CANVAS") {
+            unsigned height, width;
+            if (input >> height >> width) {
+                canvas->set_height(height);
+                canvas->set_width(width);
+            }
+        } else if (first == "SPRITE") {
+            Sprite current;
+            if (input >> current) {
+                sprites->push_back(current);
+            }
+        } else if (first == "FPS") {
+            input >> FPS;
+        } else if (first == "SINGLE-STEP") {
+            SINGLE_STEP = true;
+        } else if (first == "CONTINUOUS") {
+            SINGLE_STEP = false;
+        }
+    }
 }
 
 
@@ -118,11 +154,11 @@ vector<Sprite> read_in(int size, char *files[], Image *canvas)
  *  Purpose:  To show the animation on cout, with the given canvas and sprites
  *  Parameters: A pointer to a canvas to use, which will be modified over
  *            the course of the animation.  A vector of sprites to use.
- *  Notes:    Runs until the user presses the QUIT character.  Changes behavior
+ *  Notes:  - Runs until the user presses the QUIT character.  Changes behavior
  *            based on SINGLE_STEP.  When it is false, uses FPS to control the
  *            frame rate.
  */
-void run_animation(Image *canvas, vector<Sprite> sprites)
+void run_animation(Image<char> *canvas, vector<Sprite> sprites)
 {
     unsigned height = canvas->get_height();
     unsigned width = canvas->get_width();
@@ -131,7 +167,7 @@ void run_animation(Image *canvas, vector<Sprite> sprites)
     screen_clear();
     do {
         screen_home();
-        canvas->clear();
+        canvas->set_all(' ');
         for (unsigned i = 0; i < num_sprites; ++i) {
             sprites[i].draw_to(canvas);
             sprites[i].advance(height, width);

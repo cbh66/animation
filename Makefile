@@ -1,5 +1,5 @@
-PROGNAME := animate
-FILES := animation.cpp image.cpp sprite.cpp termfuncs.cpp
+PROGNAME := animate.out
+FILES := animation.cpp sprite.cpp termfuncs.cpp
 OBJS := $(FILES:.cpp=.o)
 DEPENDENCIES := $(FILES:.cpp=.d)
 
